@@ -782,7 +782,7 @@ function fRegolamento() {
 }
 
 /* ---------- NOTIFICHE PUSH: promemoria prima degli appuntamenti e altri messaggi ai clienti ---------- */
-const notD = () => { if (!D.notifiche) D.notifiche = cp(window.RADICI_SEED.notifiche); const n = D.notifiche, s = window.RADICI_SEED.notifiche; ['punti', 'inattivi', 'silenzio'].forEach(k => { if (!n[k]) n[k] = cp(s[k]); }); if (!n.promemoria) n.promemoria = []; return n; };
+const notD = () => { if (!D.notifiche) D.notifiche = cp(window.RADICI_SEED.notifiche); const n = D.notifiche, s = window.RADICI_SEED.notifiche; ['punti', 'inattivi', 'silenzio', 'titolare'].forEach(k => { if (!n[k]) n[k] = cp(s[k] || { attivo: true, prima: 15 }); }); if (!n.promemoria) n.promemoria = []; return n; };
 const UNITA = [[1440, 'giorni'], [60, 'ore'], [1, 'minuti']];
 const unitaDi = m => UNITA.find(([u]) => m % u === 0) || UNITA[2];
 const quandoTxt = m => { const [u, t] = unitaDi(m), n = m / u; return n + ' ' + (n === 1 ? { giorni: 'giorno', ore: 'ora', minuti: 'minuto' }[t] : t) + ' prima'; };
@@ -807,6 +807,9 @@ function vNotifiche() {
        <div class="grid2"><div><label>Titolo<input data-k="notifiche.promemoria.${i}.titolo" data-nprev="${i}" maxlength="60" value="${esc(r.titolo)}"></label><label style="margin-top:8px">Messaggio<textarea data-k="notifiche.promemoria.${i}.testo" data-nprev="${i}" maxlength="240" style="min-height:76px">${esc(r.testo)}</textarea></label></div>
        <div><span class="hint" style="display:block;margin:0 0 6px">Anteprima</span><div id="nprev_${i}">${anteprima(r.titolo, r.testo, r.prima)}</div></div></div></div>`; }).join('') || '<p class="hint">Nessun promemoria: i clienti non verranno avvisati prima dell’appuntamento.</p>'}
      ${n.promemoria.length < 3 ? '<button class="bt sm" id="nAdd">+ Aggiungi promemoria</button>' : ''}${seg}</div>
+   <div class="card"><h3 style="margin:0 0 4px">Avvisi per te nel gestionale</h3><p class="hint">Con il gestionale aperto (anche in secondo piano) ti avvisa con il suono prima di ogni appuntamento.</p>
+     <label class="sw"><input type="checkbox" data-k="notifiche.titolare.attivo" ${n.titolare.attivo ? 'checked' : ''}> Avvisami prima di ogni appuntamento</label>
+     <div class="grid2" style="margin-top:8px;max-width:420px"><label>Quanti minuti prima<input type="number" min="1" max="240" data-k="notifiche.titolare.prima" data-n value="${n.titolare.prima}"></label><span></span></div></div>
    <div class="card"><h3 style="margin:0 0 10px">Altri messaggi</h3>
      <label class="sw"><input type="checkbox" data-k="notifiche.comunicazioni" ${n.comunicazioni ? 'checked' : ''}> Quando pubblichi una comunicazione, invia anche una notifica</label>
      <div class="nsep"></div>
@@ -1012,3 +1015,17 @@ if ($('avvBtn')) $('avvBtn').onclick = async () => {
   if (Notification.permission === 'granted') { suona(true); toast('Avvisi attivi: tieni aperta questa pagina, anche in secondo piano.'); }
 };
 aggTastoAvvisi();
+
+/* ---------- AVVISO PRIMA DEGLI APPUNTAMENTI (solo con il gestionale aperto) ---------- */
+const giaAvvisati = new Set(); try { JSON.parse(sessionStorage.getItem('avvPrima') || '[]').forEach(x => giaAvvisati.add(x)); } catch (e) {}
+setInterval(() => {
+  const t = Object.assign({ attivo: true, prima: 15 }, (C.notifiche || {}).titolare || {}); if (!t.attivo || !P.length) return;
+  const ora = Date.now(), oggiK = iso(new Date());
+  attive().filter(b => b.data === oggiK).forEach(b => {
+    const inizio = new Date(b.data + 'T00:00').getTime() + b.ini * 60000, chiave = b.id + '@' + b.data + b.ini;
+    if (giaAvvisati.has(chiave) || ora < inizio - t.prima * 60000 || ora >= inizio) return;
+    giaAvvisati.add(chiave); try { sessionStorage.setItem('avvPrima', JSON.stringify([...giaAvvisati])); } catch (e) {}
+    const min = Math.max(1, Math.round((inizio - ora) / 60000));
+    avvisoArrivo('Tra ' + min + (min === 1 ? ' minuto' : ' minuti') + ' alle ' + hm(b.ini), ((b.nome || '') + ' ' + (b.cogn || '')).trim() + ' – ' + (b.servizi || []).map(x => x.nome).join(', '), apriGiorno(b.data));
+  });
+}, 20000);
