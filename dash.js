@@ -782,7 +782,7 @@ function fRegolamento() {
 }
 
 /* ---------- NOTIFICHE PUSH: promemoria prima degli appuntamenti e altri messaggi ai clienti ---------- */
-const notD = () => { if (!D.notifiche) D.notifiche = cp(window.RADICI_SEED.notifiche); const n = D.notifiche, s = window.RADICI_SEED.notifiche; ['punti', 'inattivi', 'silenzio', 'titolare'].forEach(k => { if (!n[k]) n[k] = cp(s[k] || { attivo: true, prima: 15 }); }); if (!n.promemoria) n.promemoria = []; return n; };
+const notD = () => { if (!D.notifiche) D.notifiche = cp(window.RADICI_SEED.notifiche); const n = D.notifiche, s = window.RADICI_SEED.notifiche; ['punti', 'inattivi', 'silenzio'].forEach(k => { if (!n[k]) n[k] = cp(s[k]); }); n.titolare = avvisiTitolare(n.titolare); if (!n.promemoria) n.promemoria = []; return n; };
 const UNITA = [[1440, 'giorni'], [60, 'ore'], [1, 'minuti']];
 const unitaDi = m => UNITA.find(([u]) => m % u === 0) || UNITA[2];
 const quandoTxt = m => { const [u, t] = unitaDi(m), n = m / u; return n + ' ' + (n === 1 ? { giorni: 'giorno', ore: 'ora', minuti: 'minuto' }[t] : t) + ' prima'; };
@@ -807,9 +807,11 @@ function vNotifiche() {
        <div class="grid2"><div><label>Titolo<input data-k="notifiche.promemoria.${i}.titolo" data-nprev="${i}" maxlength="60" value="${esc(r.titolo)}"></label><label style="margin-top:8px">Messaggio<textarea data-k="notifiche.promemoria.${i}.testo" data-nprev="${i}" maxlength="240" style="min-height:76px">${esc(r.testo)}</textarea></label></div>
        <div><span class="hint" style="display:block;margin:0 0 6px">Anteprima</span><div id="nprev_${i}">${anteprima(r.titolo, r.testo, r.prima)}</div></div></div></div>`; }).join('') || '<p class="hint">Nessun promemoria: i clienti non verranno avvisati prima dell’appuntamento.</p>'}
      ${n.promemoria.length < 3 ? '<button class="bt sm" id="nAdd">+ Aggiungi promemoria</button>' : ''}${seg}</div>
-   <div class="card"><h3 style="margin:0 0 4px">Avvisi per te nel gestionale</h3><p class="hint">Con il gestionale aperto (anche in secondo piano) ti avvisa con il suono prima di ogni appuntamento.</p>
-     <label class="sw"><input type="checkbox" data-k="notifiche.titolare.attivo" ${n.titolare.attivo ? 'checked' : ''}> Avvisami prima di ogni appuntamento</label>
-     <div class="grid2" style="margin-top:8px;max-width:420px"><label>Quanti minuti prima<input type="number" min="1" max="240" data-k="notifiche.titolare.prima" data-n value="${n.titolare.prima}"></label><span></span></div></div>
+   <div class="card"><h3 style="margin:0 0 4px">Avvisi per te nel gestionale</h3><p class="hint">Con il gestionale aperto (anche in secondo piano) ti avvisa con il suono prima di ogni appuntamento. Puoi averne fino a 3.</p>
+     ${n.titolare.avvisi.map((a, i) => { const [u] = unitaDi(a.prima); return `<div class="nrtop" style="margin-bottom:8px"><label class="sw"><input type="checkbox" data-k="notifiche.titolare.avvisi.${i}.attivo" ${a.attivo ? 'checked' : ''}> Attivo</label>
+       <div class="nquando"><input type="number" min="1" data-tpv="${i}" value="${a.prima / u}"><select data-tpu="${i}">${UNITA.map(([v, t]) => `<option value="${v}" ${v === u ? 'selected' : ''}>${t}</option>`).join('')}</select><span>prima</span></div>
+       <button class="ib no" data-tpdel="${i}" title="Elimina">✕</button></div>`; }).join('') || '<p class="hint">Nessun avviso prima degli appuntamenti.</p>'}
+     ${n.titolare.avvisi.length < 3 ? '<button class="bt sm" id="tpAdd">+ Aggiungi avviso</button>' : ''}</div>
    <div class="card"><h3 style="margin:0 0 10px">Altri messaggi</h3>
      <label class="sw"><input type="checkbox" data-k="notifiche.comunicazioni" ${n.comunicazioni ? 'checked' : ''}> Quando pubblichi una comunicazione, invia anche una notifica</label>
      <div class="nsep"></div>
@@ -827,6 +829,9 @@ function vNotifiche() {
   $('vista').querySelectorAll('[data-pv],[data-pu]').forEach(el => el.onchange = el.oninput = () => { const i = +(el.dataset.pv ?? el.dataset.pu); n.promemoria[i].prima = minuti(i); segna(); $('nprev_' + i).innerHTML = anteprima(n.promemoria[i].titolo, n.promemoria[i].testo, n.promemoria[i].prima); window.riempiIcone($('nprev_' + i)); });
   $('vista').querySelectorAll('[data-nprev]').forEach(el => el.addEventListener('input', () => { const i = +el.dataset.nprev, r = n.promemoria[i]; $('nprev_' + i).innerHTML = anteprima(r.titolo, r.testo, r.prima); window.riempiIcone($('nprev_' + i)); }));
   $('vista').querySelectorAll('[data-ndel]').forEach(b => b.onclick = () => { n.promemoria.splice(+b.dataset.ndel, 1); segna(); render(); });
+  $('vista').querySelectorAll('[data-tpv],[data-tpu]').forEach(el => el.onchange = el.oninput = () => { const i = +(el.dataset.tpv ?? el.dataset.tpu), v = Math.max(1, Math.round(+$('vista').querySelector(`[data-tpv="${i}"]`).value || 1)), u = +$('vista').querySelector(`[data-tpu="${i}"]`).value; n.titolare.avvisi[i].prima = v * u; segna(); });
+  $('vista').querySelectorAll('[data-tpdel]').forEach(b => b.onclick = () => { n.titolare.avvisi.splice(+b.dataset.tpdel, 1); segna(); render(); });
+  if ($('tpAdd')) $('tpAdd').onclick = () => { n.titolare.avvisi.push({ attivo: true, prima: 60 }); segna(); render(); };
   if ($('nAdd')) $('nAdd').onclick = () => { n.promemoria.push({ id: nid('r'), attivo: true, prima: 180, titolo: 'Promemoria', testo: 'Ti aspettiamo {{quando}} da {{salone}}.' }); segna(); render(); };
 }
 
@@ -1018,14 +1023,20 @@ aggTastoAvvisi();
 
 /* ---------- AVVISO PRIMA DEGLI APPUNTAMENTI (solo con il gestionale aperto) ---------- */
 const giaAvvisati = new Set(); try { JSON.parse(sessionStorage.getItem('avvPrima') || '[]').forEach(x => giaAvvisati.add(x)); } catch (e) {}
+/* le impostazioni vecchie (un solo avviso) diventano una lista */
+function avvisiTitolare(t) { if (!t) t = cp((window.RADICI_SEED.notifiche || {}).titolare || { avvisi: [{ attivo: true, prima: 15 }] }); if (!Array.isArray(t.avvisi)) t = { avvisi: [{ attivo: t.attivo !== false, prima: t.prima || 15 }] }; return t; }
 setInterval(() => {
-  const t = Object.assign({ attivo: true, prima: 15 }, (C.notifiche || {}).titolare || {}); if (!t.attivo || !P.length) return;
-  const ora = Date.now(), oggiK = iso(new Date());
-  attive().filter(b => b.data === oggiK).forEach(b => {
-    const inizio = new Date(b.data + 'T00:00').getTime() + b.ini * 60000, chiave = b.id + '@' + b.data + b.ini;
-    if (giaAvvisati.has(chiave) || ora < inizio - t.prima * 60000 || ora >= inizio) return;
-    giaAvvisati.add(chiave); try { sessionStorage.setItem('avvPrima', JSON.stringify([...giaAvvisati])); } catch (e) {}
-    const min = Math.max(1, Math.round((inizio - ora) / 60000));
-    avvisoArrivo('Tra ' + min + (min === 1 ? ' minuto' : ' minuti') + ' alle ' + hm(b.ini), ((b.nome || '') + ' ' + (b.cogn || '')).trim() + ' – ' + (b.servizi || []).map(x => x.nome).join(', '), apriGiorno(b.data));
+  const L = avvisiTitolare(cp((C.notifiche || {}).titolare)).avvisi.filter(a => a.attivo && a.prima > 0); if (!L.length || !P.length) return;
+  const ora = Date.now(), maxPrima = Math.max(...L.map(a => a.prima)), limite = iso(new Date(ora + maxPrima * 60000 + 864e5));
+  attive().filter(b => b.data >= iso(new Date()) && b.data <= limite).forEach(b => {
+    const inizio = new Date(b.data + 'T00:00').getTime() + b.ini * 60000; if (ora >= inizio) return;
+    /* tra gli avvisi già "scattati" uso solo il più vicino all'appuntamento, così non ne arrivano due insieme */
+    const scattati = L.filter(a => ora >= inizio - a.prima * 60000).sort((x, y) => x.prima - y.prima)[0]; if (!scattati) return;
+    const chiave = b.id + '@' + b.data + b.ini + '#' + scattati.prima; if (giaAvvisati.has(chiave)) return;
+    L.filter(a => a.prima >= scattati.prima).forEach(a => giaAvvisati.add(b.id + '@' + b.data + b.ini + '#' + a.prima));
+    try { sessionStorage.setItem('avvPrima', JSON.stringify([...giaAvvisati])); } catch (e) {}
+    const min = Math.round((inizio - ora) / 60000), dom = iso(new Date(ora + 864e5));
+    const tra = b.data === dom ? 'Domani' : b.data > dom ? dataLunga(b.data).replace(/^./, c => c.toUpperCase()) : min >= 120 ? 'Tra ' + Math.round(min / 60) + ' ore' : min >= 60 ? 'Tra 1 ora' : 'Tra ' + Math.max(1, min) + (min === 1 ? ' minuto' : ' minuti');
+    avvisoArrivo(tra + ' alle ' + hm(b.ini), ((b.nome || '') + ' ' + (b.cogn || '')).trim() + ' – ' + (b.servizi || []).map(x => x.nome).join(', '), apriGiorno(b.data));
   });
 }, 20000);
