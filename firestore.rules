@@ -1,0 +1,158 @@
+rules_version = '2';
+// Regole di sicurezza del progetto Firebase "nailsendmakeup".
+// Prima parte: la nuova app e la dashboard (saloni/nails/...). Seconda parte: la vecchia app, che resta valida finché tutte le clienti aggiornano.
+// Da incollare in Firebase > Firestore Database > Regole, poi "Pubblica".
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /saloni/{sid} {
+      function staffSalone() {
+        return request.auth != null &&
+          exists(/databases/$(database)/documents/saloni/$(sid)/admin/$(request.auth.uid));
+      }
+      // impostazioni del salone (servizi, orari, staff…): tutti leggono, solo il titolare modifica
+      allow read: if true;
+      allow write: if staffSalone();
+
+      // chi può entrare nella dashboard: un documento admin/<UID>, creato a mano nella console
+      match /admin/{uid} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        // la prima volta la titolare della vecchia app (admins/<UID>) diventa titolare anche qui da sola
+        allow create: if request.auth != null && request.auth.uid == uid
+          && exists(/databases/$(database)/documents/admins/$(uid));
+      }
+      // orari occupati, senza dati personali: servono all'app per mostrare gli orari liberi
+      match /busy/{id} {
+        allow read: if true;
+        // il cliente crea solo l'orario occupato della sua prenotazione; il titolare anche blocchi e assenze
+        allow create: if staffSalone() || (request.auth != null
+          && request.resource.data.keys().hasOnly(['data','ini','fine','staff']));
+        allow update: if staffSalone();
+        allow delete: if staffSalone() || (request.auth != null
+          && get(/databases/$(database)/documents/saloni/$(sid)/prenotazioni/$(id)).data.uid == request.auth.uid);
+      }
+      // prenotazioni: il cliente crea e vede solo le sue, può solo annullarle; il titolare gestisce tutto
+      match /prenotazioni/{id} {
+        allow read: if staffSalone() || (request.auth != null && resource.data.uid == request.auth.uid);
+        allow create: if staffSalone() || (request.auth != null
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.stato == 'ok');
+        allow update: if staffSalone() || (request.auth != null
+          && resource.data.uid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stato','annullataIl','annullataDa'])
+          && request.resource.data.stato == 'annullata');
+        allow delete: if staffSalone();
+      }
+      // comunicazioni del salone ai clienti: tutti leggono, solo il titolare scrive
+      match /avvisi/{id} {
+        allow read: if true;
+        allow write: if staffSalone();
+      }
+      // rubrica del salone (clienti importati o inseriti dal salone): solo il titolare
+      match /rubrica/{id} {
+        allow read, write: if staffSalone();
+      }
+      // galleria: miniature e foto grandi, tutti le vedono, solo il titolare le gestisce
+      match /galleria/{id} {
+        allow read: if true;
+        allow write: if staffSalone();
+      }
+      match /galleriaFoto/{id} {
+        allow read: if true;
+        allow write: if staffSalone();
+      }
+      // richieste per i trattamenti senza orario (trucco sposa, cerimonia): la cliente crea e vede le sue, può solo annullarle
+      match /richieste/{id} {
+        allow read: if staffSalone() || (request.auth != null && resource.data.uid == request.auth.uid);
+        allow create: if staffSalone() || (request.auth != null
+          && request.resource.data.uid == request.auth.uid && request.resource.data.stato == 'nuova');
+        allow update: if staffSalone() || (request.auth != null && resource.data.uid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stato','annullataIl'])
+          && request.resource.data.stato == 'annullata');
+        allow delete: if staffSalone();
+      }
+      // Fidelity Card: punti dei clienti. Li scrive solo il salone; ogni cliente legge solo i suoi
+      match /punti/{id} {
+        allow read: if staffSalone() || (request.auth != null && resource.data.uid == request.auth.uid);
+        allow write: if staffSalone();
+      }
+      // dati del cliente (nome, telefono, foto): li modifica solo lui, il titolare li legge
+      match /clienti/{uid} {
+        allow read: if staffSalone() || (request.auth != null && request.auth.uid == uid);
+        allow write: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+
+    // ===================== VECCHIA APP (raccolte di prima) =====================
+    function isAdmin() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function pad(n) { return n < 10 ? '0' + string(n) : string(n); }
+    function ymd(t) { return string(t.year()) + '-' + pad(t.month()) + '-' + pad(t.day()); }
+
+    // Giorni minimi per annullare online: dalle impostazioni del salone (2 se non impostato)
+    function ggAnnullo() {
+      return exists(/databases/$(database)/documents/config/salone)
+        ? get(/databases/$(database)/documents/config/salone).data.get('ggAnnullo', 2)
+        : 2;
+    }
+
+    // Impostazioni del salone (orari, chiusure, trattamenti, regole): tutti le leggono, solo la titolare le modifica
+    match /config/{doc} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Chi può entrare nell'area riservata: un documento admins/<UID>
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Orari occupati: pubblici, senza dati personali
+    match /busy/{id} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['data','ora','dur'])
+        && request.resource.data.data is string
+        && request.resource.data.ora is int
+        && request.resource.data.dur is int;
+      allow update: if isAdmin();
+      allow delete: if isAdmin() || (request.auth != null
+        && get(/databases/$(database)/documents/bookings/$(id)).data.uid == request.auth.uid);
+    }
+
+    // Dati della cliente (nome, cognome, telefono, email): salvati al primo appuntamento, solo lei li legge e li modifica
+    match /clienti/{uid} {
+      allow read: if isAdmin() || (request.auth != null && request.auth.uid == uid);
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['nome','cogn','tel','mail'])
+        && request.resource.data.nome is string && request.resource.data.nome.size() <= 60
+        && request.resource.data.cogn is string && request.resource.data.cogn.size() <= 60
+        && request.resource.data.tel is string && request.resource.data.tel.size() <= 30
+        && request.resource.data.mail is string && request.resource.data.mail.size() <= 120;
+      allow delete: if false;
+    }
+
+    // Prenotazioni complete: la cliente (con accesso Google) crea le proprie e legge solo quelle sue; l'admin le gestisce tutte
+    match /bookings/{id} {
+      allow read: if isAdmin() || (request.auth != null && resource.data.uid == request.auth.uid);
+      allow update: if isAdmin() || (request.auth != null
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['annullato','annullatoIl','annullatoDa'])
+        && request.resource.data.annullato == true
+        && (!('data' in resource.data)
+          || resource.data.data >= ymd(request.time + duration.value(ggAnnullo(), 'd'))));
+      allow delete: if isAdmin();
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['id','uid','tipo','data','ora','dur','sv','nome','cogn','tel','mail','note'])
+        && request.resource.data.keys().hasAll(['id','uid','tipo','dur','sv','nome','cogn','tel','mail'])
+        && request.resource.data.nome is string && request.resource.data.nome.size() <= 60
+        && request.resource.data.cogn is string && request.resource.data.cogn.size() <= 60
+        && request.resource.data.tel is string && request.resource.data.tel.size() <= 30
+        && request.resource.data.mail is string && request.resource.data.mail.size() <= 120;
+    }
+  }
+}
