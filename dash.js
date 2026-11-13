@@ -132,7 +132,7 @@ function vAgenda() {
   $('azioni').innerHTML = '<button class="bt pri" id="nuovo">+ Nuovo appuntamento</button>';
   $('nuovo').onclick = () => nuovo({ data: giorno, staff: agOp !== 'tutti' ? agOp : '' });
   if (agOp !== 'tutti' && !C.staff.some(s => s.id === agOp)) agOp = 'tutti';
-  if (agOp === 'tutti' && innerWidth < 700 && C.staff.length) agOp = C.staff[0].id;
+  if (agOp === 'tutti' && (innerWidth < 700 || C.staff.length === 1) && C.staff.length) agOp = C.staff[0].id; /* con una sola operatrice si vede sempre la sua agenda con le fasce */
   const L = attive().filter(b => b.data === giorno), inc = L.reduce((a, b) => a + prezzoNum(b.prezzo), 0);
   const fineS = new Date(giorno + 'T12:00'); fineS.setDate(fineS.getDate() + 6);
   const sett = attive().filter(b => b.data >= giorno && b.data <= iso(fineS)).length;
@@ -164,7 +164,7 @@ function vAgenda() {
   const sel = C.staff.find(s => s.id === agOp);
   $('vista').innerHTML = `<div class="stat"><div><b>${L.length}</b><span>appuntamenti ${giorno === oggiK ? 'oggi' : 'nel giorno'}</span></div><div><b>${Math.round(inc)} €</b><span>incasso previsto</span></div><div><b>${sett}</b><span>nei prossimi 7 giorni</span></div><div><b>${nuove}</b><span>prenotate online nelle ultime 24 h</span></div></div>
    <div class="bar" style="margin-bottom:10px"><button class="bt" id="gPrev" aria-label="Giorno precedente">‹</button><input type="date" id="gData" value="${giorno}" style="width:auto"><button class="bt" id="gNext" aria-label="Giorno successivo">›</button><button class="bt" id="gOggi">Oggi</button><b style="text-transform:capitalize">${esc(dataLunga(giorno))}</b></div>
-   <div class="optabs"><button data-op="tutti" aria-pressed="${agOp === 'tutti'}">Tutti</button>${C.staff.map(s => `<button data-op="${s.id}" aria-pressed="${agOp === s.id}">${esc(s.nome)}</button>`).join('')}</div>
+   ${C.staff.length > 1 ? `<div class="optabs"><button data-op="tutti" aria-pressed="${agOp === 'tutti'}">Tutti</button>${C.staff.map(s => `<button data-op="${s.id}" aria-pressed="${agOp === s.id}">${esc(s.nome)}</button>`).join('')}</div>` : ''}
    ${sel ? `<div class="bar presenza"><span class="hint" style="margin:0;flex:1"><b>+</b> nuovo appuntamento · <b>⦸</b> blocca o sblocca la fascia</span><button class="az pres${assente(giorno, sel.id) ? '' : ' on'}" id="pPres">✓ Presente</button><button class="az ass${assente(giorno, sel.id) ? ' on' : ''}" id="pAss">✕ Assente</button></div>` : ''}
    ${f.length ? '' : '<p class="hint">Salone chiuso in questo giorno.</p>'}
    <div class="ag" style="grid-template-columns:60px repeat(${ops.length},minmax(${agOp === 'tutti' ? 140 : 200}px,1fr))">${g}</div>`;
