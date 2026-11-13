@@ -79,7 +79,8 @@ function render() {
   $('azioni').innerHTML = '';
   ({ richieste: vRichieste, notifiche: vNotifiche, fidelity: vFidelity, galleria: vGalleria, agenda: vAgenda, clienti: vClienti, ritardatari: vRitardatari, statistiche: vStatistiche, comunicazioni: vComunicazioni, servizi: vServizi, orari: vOrari, chiusure: vChiusure, staff: vStaff, negozio: vNegozio, regole: vRegole })[vista]();
   if (IMPOSTAZIONI.includes(vista) || (vista === 'fidelity' && ['impostazioni', 'regolamento'].includes(fTab))) $('vista').insertAdjacentHTML('beforeend', `<div class="salva"><span id="stato">${sporco ? 'Modifiche non salvate' : ''}</span><button class="bt" id="annulla">Annulla modifiche</button><button class="bt pri" id="salva">Salva</button></div>`);
-  if (vista === 'agenda') { $('vista').insertAdjacentHTML('afterbegin', cardMigrazione()); if ($('migra')) $('migra').onclick = migra; }
+  if (vista === 'agenda') { $('vista').insertAdjacentHTML('afterbegin', cardMigrazione()); if ($('migra')) $('migra').onclick = migra;
+    if ($('migNo')) $('migNo').onclick = async () => { if (!await conferma('Nascondere l’importazione?', 'La scheda non comparirà più. Fallo se hai già importato o se nella vecchia app non c’era niente da tenere.', 'Nascondi', 'Annulla')) { render(); return; } try { const m = C.migrato || Date.now(); await setDoc(SAL, { migrato: m, migNascosto: true }, { merge: true }); C.migrato = m; C.migNascosto = true; if (D) { D.migrato = m; D.migNascosto = true; } render(); } catch (e) { toast('Non riuscito (' + (e.code || '') + ')'); } }; }
   window.riempiIcone($('vista'));
   if ($('salva')) { $('salva').onclick = salva; $('annulla').onclick = () => { D = cp(C); sporco = false; render(); }; }
 }
@@ -898,15 +899,19 @@ function fissaRichiesta(r) {
 
 /* ---------- IMPORTAZIONE dalla vecchia app Nails & Makeup (stesso progetto Firebase, vecchie raccolte bookings e clienti) ---------- */
 function cardMigrazione() {
-  if (C.migrato && Date.now() - C.migrato > 14 * 864e5) return '';
-  if (C.migrato) return `<div class="card mig" style="padding:12px 16px"><b>📦 Dati della vecchia app importati il ${new Date(C.migrato).toLocaleDateString('it-IT')}.</b> <span class="hint">Finché qualche cliente usa ancora la vecchia app, puoi portare qui le prenotazioni nuove: quelle già importate non vengono toccate.</span> <button class="bt sm" id="migra" style="margin-left:6px">Importa le novità</button> <span class="hint" id="migStato"></span></div>`;
-  return `<div class="card mig"><b style="display:block;margin-bottom:4px">📦 Porta qui i dati della vecchia app</b><p class="hint" style="margin:0 0 10px">Copia nella nuova gestione gli appuntamenti, le richieste e i clienti registrati nella vecchia app Nails &amp; Makeup. I dati vecchi non vengono cancellati. Va fatto prima di pubblicare la nuova app.</p><button class="bt pri" id="migra">Importa i dati</button> <span class="hint" id="migStato" style="margin-left:8px"></span></div>`;
+  if (C.migNascosto || (C.migrato && Date.now() - C.migrato > 14 * 864e5)) return '';
+  if (C.migrato) return `<div class="card mig" style="padding:12px 16px"><b>📦 Dati della vecchia app importati il ${new Date(C.migrato).toLocaleDateString('it-IT')}.</b> <span class="hint">Finché qualche cliente usa ancora la vecchia app, puoi portare qui le prenotazioni nuove: quelle già importate non vengono toccate.</span> <button class="bt sm" id="migra" style="margin-left:6px">Importa le novità</button> <button class="bt sm" id="migNo">Nascondi</button><p class="err" id="migStato" style="margin:8px 0 0"></p></div>`;
+  return `<div class="card mig"><b style="display:block;margin-bottom:4px">📦 Porta qui i dati della vecchia app</b><p class="hint" style="margin:0 0 10px">Copia nella nuova gestione gli appuntamenti, le richieste e i clienti registrati nella vecchia app Nails &amp; Makeup. I dati vecchi non vengono cancellati. Va fatto prima di pubblicare la nuova app.</p><button class="bt pri" id="migra">Importa i dati</button> <button class="bt" id="migNo">Non serve, nascondi</button><p class="err" id="migStato" style="margin:10px 0 0"></p></div>`;
 }
 async function migra() {
   const b = $('migra'), S = t => { $('migStato').textContent = t; };
   b.disabled = true; S('Leggo i dati della vecchia app…');
   try {
-    const [bs, cs] = await Promise.all([getDocs(collection(db, 'bookings')), getDocs(collection(db, 'clienti'))]);
+    /* le due letture separate: se una è bloccata dalle regole, l'altra si importa lo stesso */
+    const vuoto = { docs: [], size: 0 }, err = [];
+    const bs = await getDocs(collection(db, 'bookings')).catch(e => { err.push('appuntamenti (' + (e.code || e.message) + ')'); return vuoto; });
+    const cs = await getDocs(collection(db, 'clienti')).catch(e => { err.push('clienti (' + (e.code || e.message) + ')'); return vuoto; });
+    if (err.length === 2) throw Object.assign(new Error('lettura'), { code: 'permission-denied' });
     const oggiK = iso(new Date()), ops = [], per = s => C.servizi.find(x => x.nome.toLowerCase() === String(s || '').toLowerCase()) || C.servizi.find(x => String(s || '').toLowerCase().startsWith(x.nome.toLowerCase().split(',')[0]));
     let nP = 0, nQ = 0; const gia = new Set(P.map(x => x.id).concat(RQ.map(x => x.id)));
     bs.docs.forEach(d => {
@@ -926,6 +931,7 @@ async function migra() {
       S('Copio… ' + Math.min(i + 400, ops.length) + ' / ' + ops.length);
     }
     if (!C.migrato) await setDoc(SAL, { migrato: Date.now() }, { merge: true });
+    if (err.length) { b.disabled = false; S('Importati ' + nP + ' appuntamenti, ' + nQ + ' richieste e ' + cs.size + ' clienti, ma non è stato possibile leggere: ' + err.join(', ') + '. Controlla di aver incollato in Firebase anche la parte “VECCHIA APP” delle regole, poi riprova.'); return; }
     toast('Importati ' + nP + ' appuntamenti, ' + nQ + ' richieste e ' + cs.size + ' clienti'); render();
-  } catch (e) { console.error(e); b.disabled = false; S(e.code === 'permission-denied' ? 'Permesso negato: incolla prima le nuove regole di Firebase.' : 'Non riuscito (' + (e.code || e.message) + '). Riprova.'); }
+  } catch (e) { console.error(e); b.disabled = false; S(e.code === 'permission-denied' ? 'Permesso negato: in Firebase → Firestore → Regole incolla le regole complete (anche la parte “VECCHIA APP”) e premi Pubblica, poi riprova.' : 'Non riuscito (' + (e.code || e.message) + '). Riprova.'); }
 }
