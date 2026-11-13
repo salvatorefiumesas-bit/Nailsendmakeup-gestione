@@ -45,7 +45,7 @@ onAuthStateChanged(auth, async u => {
   $('login').hidden = !!u; $('app').hidden = !u;
   if (!u) return;
   unsub.push(onSnapshot(SAL, s => { C = Object.assign(cp(window.RADICI_SEED), s.exists() ? window.fasceDaDb(s.data()) : {}); $('sNome').textContent = C.nome; if (!sporco) { D = cp(C); render(); } }));
-  const vive = ['agenda', 'clienti', 'ritardatari', 'statistiche'], fermo = () => document.activeElement && (document.activeElement.matches('input[type=search],#cQ,#sQ') || ($('vista').contains(document.activeElement) && document.activeElement.matches('input,textarea,select')));
+  const vive = ['agenda', 'clienti', 'ritardatari', 'statistiche', 'richieste'], fermo = () => document.activeElement && (document.activeElement.matches('input[type=search],#cQ,#sQ') || ($('vista').contains(document.activeElement) && document.activeElement.matches('input,textarea,select')));
   const ridisegna = () => { if ((vive.includes(vista) || (vista === 'fidelity' && ['giornata', 'clienti'].includes(fTab))) && $('mod').hidden && !fermo()) render(); };
   unsub.push(onSnapshot(colP, s => { P = s.docs.map(d => d.data()); ridisegna(); collega(); }));
   unsub.push(onSnapshot(colC, s => { CL = s.docs.map(d => Object.assign({ uid: d.id }, d.data())); ridisegna(); collega(); }));
@@ -465,7 +465,8 @@ function vServizi() {
      ${D.servizi.map((s, si) => s.cat !== c.id ? '' : `<div class="srow${s.visibile === false ? ' nas' : ''}"><svg data-i="${esc(s.icona)}"></svg><input data-k="servizi.${si}.nome" value="${esc(s.nome)}" aria-label="Nome"><input data-k="servizi.${si}.prezzo" value="${esc(s.prezzo)}" aria-label="Prezzo" placeholder="Prezzo"><input data-k="servizi.${si}.durata" data-n type="number" min="5" step="5" value="${s.durata}" aria-label="Minuti">
        <div class="az"><select data-k="servizi.${si}.icona" style="width:auto;padding:6px">${ICONE.map(t => `<option ${s.icona === t ? 'selected' : ''}>${t}</option>`).join('')}</select><button class="ib" data-s="vis" data-i2="${si}" title="Visibile ai clienti">${s.visibile === false ? '◌' : '👁'}</button><button class="ib" data-s="su" data-i2="${si}">↑</button><button class="ib" data-s="giu" data-i2="${si}">↓</button><button class="ib no" data-s="del" data-i2="${si}">✕</button></div>
        <input class="descr" data-k="servizi.${si}.descr" value="${esc(s.descr || '')}" placeholder="Descrizione (facoltativa)">
-       <label class="sw srq"><input type="checkbox" data-k="servizi.${si}.richiesta" ${s.richiesta ? 'checked' : ''}> Su richiesta: la cliente non sceglie l’orario, manda una richiesta (es. trucco sposa)</label></div>`).join('')}
+       <label class="sw srq"><input type="checkbox" data-k="servizi.${si}.richiesta" ${s.richiesta ? 'checked' : ''}> Su richiesta: la cliente non sceglie l’orario, manda una richiesta (es. trucco sposa)</label>
+       <label class="srq srg">La cliente può annullare dall’app fino a <input type="number" min="0" max="60" data-k="servizi.${si}.annulloGiorni" data-n value="${s.annulloGiorni ?? (s.richiesta ? 7 : '')}" placeholder="—"> giorni prima <span>(vuoto o 0 = regola generale, in Regole prenotazione)</span></label></div>`).join('')}
      <div style="padding:10px 14px"><button class="bt sm" data-c="add" data-i2="${ci}">+ Servizio</button></div></div>`).join('') +
    '<button class="bt" id="addCat">+ Nuova categoria</button>';
   leggi($('vista'));
@@ -820,17 +821,26 @@ function vNotifiche() {
 
 /* ---------- RICHIESTE: trattamenti "su richiesta" (trucco sposa, cerimonia). La titolare fissa l'appuntamento o risponde di no ---------- */
 let filtroRq = 'nuova';
-const aggBadgeRic = () => { const n = RQ.filter(r => r.stato === 'nuova').length; if ($('nRic')) $('nRic').textContent = n || ''; };
+const aggBadgeRic = () => { const n = RQ.filter(r => statoRq(r) === 'nuova').length; if ($('nRic')) $('nRic').textContent = n || ''; };
+/* stato reale di una richiesta: se l'appuntamento fissato è stato poi annullato (dalla cliente o dal salone), conta come annullata */
+const pren = r => r.pren ? P.find(b => b.id === r.pren) : null;
+const statoRq = r => r.stato === 'fissata' && pren(r) && pren(r).stato === 'annullata' ? 'annullata' : r.stato;
+const daChiRq = r => { const b = pren(r); return (b && b.stato === 'annullata' ? b.annullataDa : r.annullataDa) === 'salone' ? 'salone' : 'cliente'; };
 function vRichieste() {
-  const STQ = { nuova: 'Da gestire', fissata: 'Appuntamento fissato', rifiutata: 'Risposto di no', annullata: 'Annullata dalla cliente' };
-  const L = RQ.filter(r => filtroRq === 'tutte' || r.stato === filtroRq).sort((a, b) => b.creata - a.creata);
-  $('vista').innerHTML = `<p class="hint">Qui arrivano le richieste per i trattamenti senza orario (trucco sposa, cerimonia). Contatta la cliente, poi fissa l’appuntamento: lei lo vedrà nella sua app.</p>
-   <div class="optabs">${[['nuova', 'Da gestire'], ['fissata', 'Fissate'], ['rifiutata', 'Risposto di no'], ['tutte', 'Tutte']].map(([k, t]) => `<button data-fq="${k}" aria-pressed="${k === filtroRq}">${t}${k === 'nuova' && RQ.filter(r => r.stato === 'nuova').length ? ' · ' + RQ.filter(r => r.stato === 'nuova').length : ''}</button>`).join('')}</div>
-   ${L.length ? L.map(r => `<div class="card rqc"><div class="t"><b>${esc(r.nome)} ${esc(r.cogn || '')}</b> <span class="rqs ${r.stato}">${STQ[r.stato] || r.stato}</span>
-     <small>${esc(r.servizio && r.servizio.nome || '')}${r.dataEvento ? ' · evento: ' + esc(dataLunga(r.dataEvento)) : ''} · inviata il ${new Date(r.creata).toLocaleDateString('it-IT')}</small>
-     ${r.note ? `<p>${esc(r.note)}</p>` : ''}${r.risposta ? `<small style="margin-top:6px">Risposta: ${esc(r.risposta)}</small>` : ''}${r.stato === 'fissata' && r.data ? `<small style="margin-top:6px;color:var(--ok)">Fissato ${esc(dataLunga(r.data))} alle ${hm(r.ini)}</small>` : ''}
-     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${contatti(r.tel, 'Ciao ' + (r.nome || '') + ', ho ricevuto la tua richiesta per ' + (r.servizio && r.servizio.nome || 'il trucco').toLowerCase() + '. ')}
-     ${r.stato === 'nuova' ? `<button class="bt sm pri" data-rqf="${esc(r.id)}">Fissa appuntamento</button><button class="bt sm no" data-rqn="${esc(r.id)}">Rispondi di no</button>` : ''}</div></div></div>`).join('') : '<div class="card"><p class="hint" style="margin:0">Nessuna richiesta.</p></div>'}`;
+  const STQ = { nuova: 'Da gestire', fissata: 'Appuntamento fissato', rifiutata: 'Risposto di no' };
+  const etichetta = r => statoRq(r) === 'annullata' ? (daChiRq(r) === 'salone' ? 'Annullata da te' : 'Annullata dalla cliente') : STQ[r.stato] || r.stato;
+  const L = RQ.filter(r => filtroRq === 'tutte' || statoRq(r) === filtroRq).sort((a, b) => (b.annullataIl || b.creata) - (a.annullataIl || a.creata));
+  const recenti = RQ.filter(r => statoRq(r) === 'annullata' && daChiRq(r) === 'cliente' && ((r.annullataIl || (pren(r) || {}).annullataIl || 0) > Date.now() - 7 * 864e5)).length;
+  $('vista').innerHTML = `<p class="hint">Qui arrivano le richieste per i trattamenti senza orario (trucco sposa, cerimonia). Contatta la cliente, poi fissa l’appuntamento: lei lo vedrà nella sua app. Le clienti possono annullare un trucco dall’app fino a ${giorniTrucco()} giorni prima.</p>
+   <div class="optabs">${[['nuova', 'Da gestire'], ['fissata', 'Fissate'], ['annullata', 'Annullate'], ['rifiutata', 'Risposto di no'], ['tutte', 'Tutte']].map(([k, t]) => { const n = k === 'nuova' ? RQ.filter(r => statoRq(r) === 'nuova').length : k === 'annullata' ? recenti : 0; return `<button data-fq="${k}" aria-pressed="${k === filtroRq}">${t}${n ? ' · ' + n : ''}</button>`; }).join('')}</div>
+   ${L.length ? L.map(r => { const st = statoRq(r), b = pren(r), quando = r.annullataIl || (b && b.annullataIl);
+     return `<div class="card rqc"><div class="t"><b>${esc(r.nome)} ${esc(r.cogn || '')}</b> <span class="rqs ${st}">${etichetta(r)}</span>
+     <small>${esc(r.servizio && r.servizio.nome || '')}${r.dataEvento ? ' · evento: ' + esc(dataLunga(r.dataEvento)) : ''} · inviata il ${new Date(r.creata).toLocaleDateString('it-IT')}${st === 'annullata' && quando ? ' · annullata il ' + new Date(quando).toLocaleDateString('it-IT') : ''}</small>
+     ${r.note ? `<p>${esc(r.note)}</p>` : ''}${r.risposta ? `<small style="margin-top:6px">Risposta: ${esc(r.risposta)}</small>` : ''}${r.data && r.stato === 'fissata' ? `<small style="margin-top:6px;color:${st === 'annullata' ? 'var(--mute)' : 'var(--ok)'}">${st === 'annullata' ? 'Era fissato' : 'Fissato'} ${esc(dataLunga(r.data))} alle ${hm(r.ini)}</small>` : ''}
+     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${contatti(r.tel, 'Ciao ' + (r.nome || '') + ', ti scrivo per ' + (r.servizio && r.servizio.nome || 'il trucco').toLowerCase() + '. ')}
+     ${st === 'nuova' ? `<button class="bt sm pri" data-rqf="${esc(r.id)}">Fissa appuntamento</button><button class="bt sm no" data-rqn="${esc(r.id)}">Rispondi di no</button>` : ''}
+     ${st === 'fissata' ? `<button class="bt sm no" data-rqa="${esc(r.id)}">Annulla l’appuntamento</button>` : ''}</div></div></div>`; }).join('') : '<div class="card"><p class="hint" style="margin:0">Nessuna richiesta.</p></div>'}`;
+  $('vista').querySelectorAll('[data-rqa]').forEach(k => k.onclick = () => annullaTrucco(RQ.find(r => r.id === k.dataset.rqa)));
   $('vista').querySelectorAll('[data-fq]').forEach(b => b.onclick = () => { filtroRq = b.dataset.fq; render(); });
   $('vista').querySelectorAll('[data-rqf]').forEach(b => b.onclick = () => fissaRichiesta(RQ.find(r => r.id === b.dataset.rqf)));
   $('vista').querySelectorAll('[data-rqn]').forEach(b => b.onclick = () => {
@@ -840,6 +850,20 @@ function vRichieste() {
     $('rqX').onclick = chiudi;
     $('rqOk').onclick = async () => { try { await setDoc(doc(colQ, r.id), { stato: 'rifiutata', risposta: $('rqM').value.trim(), rispostaIl: Date.now() }, { merge: true }); chiudi(); toast('Risposta inviata'); } catch (e) { toast(e.code === 'permission-denied' ? 'Permesso negato: aggiorna le regole di Firebase.' : 'Non riuscito.'); } };
   });
+}
+const giorniTrucco = () => { const v = C.servizi.filter(x => x.richiesta).map(x => +x.annulloGiorni || 7); return v.length ? Math.max(...v) : 7; };
+function annullaTrucco(r) {
+  const b = pren(r);
+  finestra(`<h3>Annullare il trucco di ${esc(r.nome)}?</h3><p class="hint">${b ? esc(dataLunga(b.data)) + ' alle ' + hm(b.ini) + ' · ' : ''}${esc(r.servizio && r.servizio.nome || '')}. La cliente lo vede annullato nella sua app.</p>
+    <label>Messaggio per la cliente (facoltativo)<textarea id="raM" maxlength="300" style="min-height:80px" placeholder="Es. purtroppo ho avuto un imprevisto, ti richiamo per spostarlo"></textarea></label>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="bt" id="raX">Indietro</button><button class="bt pri" id="raOk" style="background:var(--wait);border-color:var(--wait)">Annulla il trucco</button></div>`);
+  $('raX').onclick = chiudi;
+  $('raOk').onclick = async () => {
+    const ora = Date.now(), w = writeBatch(db);
+    if (b) { w.update(doc(colP, b.id), { stato: 'annullata', annullataIl: ora, annullataDa: 'salone' }); w.delete(doc(colB, b.id)); }
+    w.set(doc(colQ, r.id), { stato: 'annullata', annullataIl: ora, annullataDa: 'salone', risposta: $('raM').value.trim(), rispostaIl: ora }, { merge: true });
+    try { await w.commit(); chiudi(); toast('Trucco annullato'); } catch (e) { toast(e.code === 'permission-denied' ? 'Permesso negato: aggiorna le regole di Firebase.' : 'Non riuscito.'); }
+  };
 }
 function fissaRichiesta(r) {
   const sv = r.servizio || {}, st = C.staff[0];
